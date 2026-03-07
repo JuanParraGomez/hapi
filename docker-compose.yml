@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: hapi-api
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./app/policies:/app/app/policies:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8095:8095"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp
+    container_name: hapi-mcp
+    env_file:
+      - .env
+    environment:
+      HAPI_API_BASE_URL: http://api:8095
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8096
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8096:8096"
+    restart: unless-stopped

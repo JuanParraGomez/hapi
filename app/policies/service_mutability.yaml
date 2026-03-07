@@ -1,0 +1,11 @@
+defaults:
+  unknown_services: read_only
+
+service_rules:
+  - match_name: n8n
+    mutability: manageable
+    notes: explicitly allowed for operational changes
+
+  - match_name: my-video
+    mutability: manageable
+    notes: explicitly allowed for operational changes
