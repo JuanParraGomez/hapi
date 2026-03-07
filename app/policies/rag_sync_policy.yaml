@@ -1,0 +1,17 @@
+enabled: true
+tracked_files:
+  - README.md
+  - app.meta.yaml
+  - deploy.meta.yaml
+optional_files:
+  - ARCHITECTURE.md
+  - DECISIONS.md
+conceptual_triggers:
+  - purpose
+  - architecture
+  - domain
+  - stack
+  - deploy
+  - usage
+  - integration
+tenant_id: ui-projects

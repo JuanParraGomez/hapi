@@ -1,0 +1,7 @@
+enabled: true
+default_project_name: ui-factory-prod
+default_environment_name: production
+admin_hosts:
+  - projects.uniflexia.cloud
+  - projects.uniflexa.cloud
+prefer_for_long_lived_ui: true

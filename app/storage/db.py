@@ -46,15 +46,40 @@ class Database:
                 """
                 CREATE TABLE IF NOT EXISTS projects (
                     project_id TEXT PRIMARY KEY,
+                    slug TEXT,
                     name TEXT NOT NULL,
                     description TEXT,
                     lifetime TEXT NOT NULL,
                     ttl_hours INTEGER,
                     created_at TEXT NOT NULL,
-                    expires_at TEXT
+                    updated_at TEXT,
+                    expires_at TEXT,
+                    status TEXT,
+                    project_root TEXT,
+                    template TEXT,
+                    deployment_provider TEXT,
+                    domain TEXT,
+                    rag_sync_enabled INTEGER,
+                    promoted_from TEXT
                 )
                 """
             )
+            self._ensure_column(conn, "projects", "slug", "TEXT")
+            self._ensure_column(conn, "projects", "updated_at", "TEXT")
+            self._ensure_column(conn, "projects", "status", "TEXT")
+            self._ensure_column(conn, "projects", "project_root", "TEXT")
+            self._ensure_column(conn, "projects", "template", "TEXT")
+            self._ensure_column(conn, "projects", "deployment_provider", "TEXT")
+            self._ensure_column(conn, "projects", "domain", "TEXT")
+            self._ensure_column(conn, "projects", "rag_sync_enabled", "INTEGER")
+            self._ensure_column(conn, "projects", "promoted_from", "TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug)")
+
+    @staticmethod
+    def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def utcnow_iso() -> str:

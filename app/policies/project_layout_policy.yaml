@@ -1,0 +1,17 @@
+repo_root_name: coolify-server
+long_lived_root: apps
+short_lived_root: sandboxes
+registry_root: registry/projects
+rag_root: rag/manifests
+templates_root: templates
+required_files:
+  - README.md
+  - app.meta.yaml
+  - deploy.meta.yaml
+allowed_roots:
+  - apps
+  - sandboxes
+  - templates
+  - registry
+  - rag
+  - docs

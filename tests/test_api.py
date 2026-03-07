@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.main import app
+from tests.conftest import seed_monorepo
 
 
 def test_health():
@@ -14,3 +18,28 @@ def test_invalid_action_payload():
     with TestClient(app) as client:
         res = client.post("/services/x/actions", json={"action": "invalid"})
     assert res.status_code == 422
+
+
+def test_create_project_endpoint(monkeypatch, tmp_path: Path):
+    repo_root = tmp_path / "coolify-server"
+    seed_monorepo(repo_root)
+    monkeypatch.setenv("COOLIFY_SERVER_REPO_ROOT", str(repo_root))
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "data" / "hapi.db"))
+    monkeypatch.setenv("AUTO_REFRESH_INVENTORY_ON_STARTUP", "false")
+    monkeypatch.setenv("RAG_SYNC_ENABLED", "false")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        res = client.post(
+            "/projects/create",
+            json={"name": "CRM", "lifetime": "long_lived", "template": "nextjs-starter"},
+        )
+        registry = client.get("/registry")
+
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["project"]["slug"] == "crm"
+    assert registry.status_code == 200
+    assert registry.json()["count"] >= 1
+    get_settings.cache_clear()

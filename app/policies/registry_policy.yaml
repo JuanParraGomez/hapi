@@ -1,0 +1,4 @@
+source_of_truth: registry/projects
+require_readme: true
+require_metadata: true
+unique_slug: true

@@ -1,0 +1,31 @@
+templates:
+  - slug: react-starter
+    app_type: react
+    description: React starter for long-lived UI projects in the central monorepo.
+    deployment_provider: coolify
+    recommended_for:
+      - long_lived
+    default_files:
+      - package.json
+      - src/main.jsx
+      - README.md
+  - slug: nextjs-starter
+    app_type: nextjs
+    description: Next.js starter for long-lived UI projects served through Coolify.
+    deployment_provider: coolify
+    recommended_for:
+      - long_lived
+    default_files:
+      - package.json
+      - app/page.tsx
+      - README.md
+  - slug: static-html-starter
+    app_type: static_html
+    description: Static HTML starter for short-lived sandboxes and quick demos.
+    deployment_provider: docker
+    recommended_for:
+      - short_lived
+      - long_lived
+    default_files:
+      - index.html
+      - README.md

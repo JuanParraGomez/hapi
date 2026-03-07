@@ -27,6 +27,13 @@ async def _post(path: str, payload: dict | None = None):
         return resp.json()
 
 
+async def _patch(path: str, payload: dict):
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(f"{API_BASE}{path}", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
 @mcp.tool
 def hapi_health() -> dict:
     return {"status": "ok", "service": "hapi-mcp", "api_base": API_BASE}
@@ -59,14 +66,25 @@ async def hapi_get_mutability_policy() -> dict:
 
 
 @mcp.tool
-async def hapi_create_project(name: str, lifetime: str, description: str = "", ttl_hours: int | None = None) -> dict:
+async def hapi_create_project(
+    name: str,
+    lifetime: str,
+    description: str = "",
+    slug: str | None = None,
+    template: str | None = None,
+    ttl_hours: int | None = None,
+    deploy_now: bool = False,
+) -> dict:
     return await _post(
-        "/projects",
+        "/projects/create",
         {
             "name": name,
             "description": description or None,
+            "slug": slug,
+            "template": template,
             "lifetime": lifetime,
             "ttl_hours": ttl_hours,
+            "deploy_now": deploy_now,
         },
     )
 
@@ -75,6 +93,58 @@ async def hapi_create_project(name: str, lifetime: str, description: str = "", t
 async def hapi_list_projects() -> dict:
     data = await _get("/projects")
     return {"projects": data, "count": len(data)}
+
+
+@mcp.tool
+async def hapi_get_project(slug: str) -> dict:
+    return await _get(f"/projects/{slug}")
+
+
+@mcp.tool
+async def hapi_render_project_context(slug: str) -> dict:
+    return await _post(f"/projects/{slug}/edit-context", {"include_readme": True})
+
+
+@mcp.tool
+async def hapi_deploy_project(slug: str, domain: str | None = None, environment_profile: str = "production") -> dict:
+    return await _post(
+        f"/projects/{slug}/deploy",
+        {"domain": domain, "environment_profile": environment_profile},
+    )
+
+
+@mcp.tool
+async def hapi_promote_project(slug: str, target_slug: str | None = None, domain: str | None = None, deploy_now: bool = False) -> dict:
+    return await _post(
+        f"/projects/{slug}/promote",
+        {"target_slug": target_slug, "domain": domain, "deploy_now": deploy_now},
+    )
+
+
+@mcp.tool
+async def hapi_sync_project_rag(slug: str, force: bool = False, note: str | None = None) -> dict:
+    return await _post(f"/projects/{slug}/sync-rag", {"force": force, "note": note})
+
+
+@mcp.tool
+async def hapi_get_project_rag_status(slug: str) -> dict:
+    return await _get(f"/projects/{slug}/rag-status")
+
+
+@mcp.tool
+async def hapi_list_registry() -> dict:
+    return await _get("/registry")
+
+
+@mcp.tool
+async def hapi_refresh_registry() -> dict:
+    return await _post("/registry/refresh")
+
+
+@mcp.tool
+async def hapi_update_project(slug: str, description: str | None = None, notes: str | None = None, domain: str | None = None, status: str | None = None) -> dict:
+    payload = {"description": description, "notes": notes, "domain": domain, "status": status}
+    return await _patch(f"/projects/{slug}", payload)
 
 
 def main() -> None:
