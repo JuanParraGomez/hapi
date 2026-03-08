@@ -465,8 +465,8 @@ class ProjectService:
 
     def _default_domain(self, slug: str, lifetime: ProjectLifetime) -> str | None:
         if lifetime == ProjectLifetime.long_lived:
-            return f"{slug}.apps.uniflexia.cloud"
-        return f"{slug}.sandbox.uniflexia.cloud"
+            return f"{slug}.apps.uniflexa.cloud"
+        return f"{slug}.sandbox.uniflexa.cloud"
 
     def _build_readme(
         self,
