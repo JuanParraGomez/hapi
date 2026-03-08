@@ -2,6 +2,7 @@ enabled: true
 default_project_name: ui-factory-prod
 default_environment_name: production
 admin_hosts:
+  - botmanager.uniflexa.cloud
   - projects.uniflexa.cloud
   - projects.uniflexia.cloud
 prefer_for_long_lived_ui: true
