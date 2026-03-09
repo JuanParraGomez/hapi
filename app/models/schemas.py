@@ -185,6 +185,11 @@ class ProjectLayoutPolicy(BaseModel):
     templates_root: str = "templates"
     required_files: list[str] = Field(default_factory=lambda: ["README.md", "app.meta.yaml", "deploy.meta.yaml"])
     allowed_roots: list[str] = Field(default_factory=lambda: ["apps", "sandboxes", "templates", "registry", "rag", "docs"])
+    min_slug_length: int = 8
+    min_slug_tokens: int = 2
+    disallowed_slug_prefixes: list[str] = Field(
+        default_factory=lambda: ["test", "tmp", "demo", "smoke", "probe", "repro", "hapi-ui", "hapi-app", "sales-probe"]
+    )
 
 
 class RegistryPolicy(BaseModel):
@@ -280,6 +285,15 @@ class ProjectDeployResponse(BaseModel):
     status: str
     details: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+
+
+class ProjectDeleteResponse(BaseModel):
+    slug: str
+    deleted: bool
+    removed_paths: list[str] = Field(default_factory=list)
+    coolify_deleted: bool = False
+    public_registry_deleted: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class RagSyncManifest(BaseModel):
@@ -408,3 +422,135 @@ class ProjectUpdateRequest(BaseModel):
         if not any(getattr(self, field) is not None for field in ["description", "notes", "domain", "status", "rag_sync_enabled"]):
             raise ValueError("no_update_fields")
         return self
+
+
+class PublicAppStatus(str, Enum):
+    draft = "draft"
+    building = "building"
+    ready_for_deploy = "ready_for_deploy"
+    deployed = "deployed"
+    failed = "failed"
+    archived = "archived"
+
+
+class DeploymentStatus(str, Enum):
+    pending = "pending"
+    ready_for_coolify = "ready_for_coolify"
+    deploying = "deploying"
+    deployed = "deployed"
+    failed = "failed"
+    unknown = "unknown"
+
+
+class SyncEventStatus(str, Enum):
+    pending = "pending"
+    synced = "synced"
+    failed = "failed"
+
+
+class PublicAppRecord(BaseModel):
+    app_id: str
+    slug: str
+    name: str
+    app_type: AppType = AppType.generic
+    framework: str | None = None
+    repo_url: str | None = None
+    branch: str | None = None
+    commit_sha: str | None = None
+    public_url: str | None = None
+    domain: str | None = None
+    deployment_provider: DeploymentProvider = DeploymentProvider.coolify
+    data_strategy: dict[str, Any] = Field(default_factory=dict)
+    project_slug: str | None = None
+    status: PublicAppStatus = PublicAppStatus.draft
+    tags: list[str] = Field(default_factory=list)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class PublicAppRegisterRequest(BaseModel):
+    app_id: str | None = None
+    slug: str
+    name: str
+    app_type: AppType = AppType.generic
+    framework: str | None = None
+    repo_url: str | None = None
+    branch: str | None = None
+    commit_sha: str | None = None
+    public_url: str | None = None
+    domain: str | None = None
+    deployment_provider: DeploymentProvider = DeploymentProvider.coolify
+    data_strategy: dict[str, Any] = Field(default_factory=dict)
+    project_slug: str | None = None
+    status: PublicAppStatus = PublicAppStatus.draft
+    tags: list[str] = Field(default_factory=list)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_public_slug(cls, value: str) -> str:
+        normalized = "-".join(part for part in value.strip().lower().replace("_", "-").split("-") if part)
+        if not normalized:
+            raise ValueError("slug_empty")
+        return normalized
+
+
+class PublicAppDeploymentRequest(BaseModel):
+    deployment_status: DeploymentStatus
+    provider: DeploymentProvider = DeploymentProvider.coolify
+    public_url: str | None = None
+    domain: str | None = None
+    commit_sha: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
+
+
+class PublicAppSyncRequest(BaseModel):
+    target: str = "rag"
+    status: SyncEventStatus = SyncEventStatus.synced
+    details: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
+
+
+class PublicDeploymentRecord(BaseModel):
+    app_id: str
+    deployment_status: DeploymentStatus = DeploymentStatus.unknown
+    provider: DeploymentProvider = DeploymentProvider.coolify
+    public_url: str | None = None
+    domain: str | None = None
+    commit_sha: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime
+
+
+class SyncEventRecord(BaseModel):
+    event_id: str
+    app_id: str
+    target: str
+    status: SyncEventStatus
+    details: dict[str, Any] = Field(default_factory=dict)
+    correlation_id: str | None = None
+    created_at: datetime
+
+
+class PublicAppsListResponse(BaseModel):
+    apps: list[PublicAppRecord] = Field(default_factory=list)
+    count: int = 0
+
+
+class PublicSummaryResponse(BaseModel):
+    total_apps: int = 0
+    deployed_apps: int = 0
+    failed_apps: int = 0
+    latest_apps: list[PublicAppRecord] = Field(default_factory=list)
+    coolify: dict[str, Any] = Field(default_factory=dict)
+
+
+class CoolifyHealthResponse(BaseModel):
+    enabled: bool
+    configured: bool
+    reachable: bool
+    base_url: str
+    details: dict[str, Any] = Field(default_factory=dict)

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 import yaml
 
 from app.models.schemas import (
@@ -16,6 +17,7 @@ from app.models.schemas import (
     ProjectCreationArtifacts,
     ProjectDeployRequest,
     ProjectDeployResponse,
+    ProjectDeleteResponse,
     ProjectLifetime,
     ProjectManifestFiles,
     ProjectPromoteRequest,
@@ -32,6 +34,8 @@ from app.models.schemas import (
 )
 from app.services.coolify_service import CoolifyService
 from app.services.project_policy_service import ProjectPolicyService
+from app.services.public_app_service import PublicAppService
+from app.services.public_route_service import PublicRouteService
 from app.services.rag_sync_service import RagSyncService
 from app.services.registry_service import RegistryService
 from app.services.template_service import TemplateService
@@ -49,6 +53,8 @@ class ProjectService:
         template_service: TemplateService,
         rag_sync_service: RagSyncService,
         coolify_service: CoolifyService,
+        public_route_service: PublicRouteService,
+        public_app_service: PublicAppService,
     ):
         self.db = db
         self.default_ttl_hours = default_ttl_hours
@@ -58,11 +64,16 @@ class ProjectService:
         self.template_service = template_service
         self.rag_sync_service = rag_sync_service
         self.coolify_service = coolify_service
+        self.public_route_service = public_route_service
+        self.public_app_service = public_app_service
         self._ensure_layout()
 
     def _ensure_layout(self) -> None:
         policy = self.policy_service.project_layout
-        self.repo_root.mkdir(parents=True, exist_ok=True)
+        if not self.repo_root.exists():
+            raise ValueError(f"repo_root_not_available:{self.repo_root}")
+        if not self.repo_root.is_dir():
+            raise ValueError(f"repo_root_not_directory:{self.repo_root}")
         for relative in policy.allowed_roots:
             (self.repo_root / relative).mkdir(parents=True, exist_ok=True)
         (self.repo_root / policy.registry_root).mkdir(parents=True, exist_ok=True)
@@ -122,6 +133,15 @@ class ProjectService:
 
     def validate_slug(self, slug: str) -> SlugValidationResponse:
         normalized = self.slugify(slug)
+        policy = self.policy_service.project_layout
+        tokens = [token for token in normalized.split("-") if token]
+        if len(normalized) < policy.min_slug_length:
+            return SlugValidationResponse(slug=normalized, available=False, reason="slug_too_short")
+        if len(tokens) < policy.min_slug_tokens:
+            return SlugValidationResponse(slug=normalized, available=False, reason="slug_not_indicative")
+        for prefix in policy.disallowed_slug_prefixes:
+            if normalized.startswith(prefix):
+                return SlugValidationResponse(slug=normalized, available=False, reason=f"slug_prefix_disallowed:{prefix}")
         if self.registry_service.exists(normalized):
             return SlugValidationResponse(slug=normalized, available=False, reason="slug_already_exists")
         if (self.repo_root / self.policy_service.project_layout.long_lived_root / normalized).exists():
@@ -258,6 +278,59 @@ class ProjectService:
             deployed=bool(deployment and deployment.deployed),
             deployment=deployment,
             rag_sync=rag_sync,
+        )
+
+    def delete(self, slug: str, *, purge_coolify: bool = True, purge_public_registry: bool = True) -> ProjectDeleteResponse:
+        entry = self.get(slug)
+        removed_paths: list[str] = []
+        details: dict[str, object] = {}
+
+        if purge_coolify and entry.deployment_provider == DeploymentProvider.coolify:
+            try:
+                coolify = self.coolify_service.delete_application(
+                    slug=entry.slug,
+                    base_directory=f"/{entry.project_root}",
+                    domain=entry.domain,
+                )
+            except Exception as exc:  # pragma: no cover - network/runtime variability
+                coolify = {"deleted": False, "reason": "coolify_delete_unavailable", "error": str(exc)}
+            details["coolify"] = coolify
+            coolify_deleted = bool(coolify.get("deleted"))
+        else:
+            coolify_deleted = False
+
+        if purge_public_registry:
+            public_result = self.public_app_service.delete_by_project_slug(entry.slug)
+            details["public_registry"] = public_result
+            public_registry_deleted = bool(public_result.get("deleted"))
+        else:
+            public_registry_deleted = False
+
+        project_dir = self.repo_root / entry.project_root
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+            removed_paths.append(str(project_dir.relative_to(self.repo_root)))
+
+        rag_manifest_path = self.rag_sync_service.manifest_path(entry.slug)
+        if rag_manifest_path.exists():
+            rag_manifest_path.unlink()
+            removed_paths.append(str(rag_manifest_path.relative_to(self.repo_root)))
+
+        registry_manifest = self.registry_service.manifest_path(entry.slug)
+        if registry_manifest.exists():
+            registry_manifest.unlink()
+            removed_paths.append(str(registry_manifest.relative_to(self.repo_root)))
+
+        with self.db.connect() as conn:
+            conn.execute("DELETE FROM projects WHERE slug = ?", (entry.slug,))
+
+        return ProjectDeleteResponse(
+            slug=entry.slug,
+            deleted=True,
+            removed_paths=removed_paths,
+            coolify_deleted=coolify_deleted,
+            public_registry_deleted=public_registry_deleted,
+            details=details,
         )
 
     def get(self, slug: str) -> RegistryEntry:
@@ -408,13 +481,84 @@ class ProjectService:
             domain=project.domain,
             port=3000 if project.app_type == AppType.nextjs else 80,
         )
-        deployment = self.coolify_service.deploy_project(coolify_request, self.repo_root)
-        if deployment.status in {"ready_for_coolify", "deployed"}:
+        try:
+            deployment = self.coolify_service.deploy_project(coolify_request, self.repo_root)
+        except httpx.HTTPStatusError as exc:
+            details = {
+                "coolify_http_status": exc.response.status_code,
+                "coolify_response": (exc.response.text or "").strip()[:4000],
+                "coolify_url": str(exc.request.url),
+            }
+            # Degraded mode: keep flow successful for orchestration and retry later.
+            if exc.response.status_code in {502, 503, 504}:
+                return ProjectDeployResponse(
+                    slug=slug,
+                    provider=DeploymentProvider.coolify,
+                    deployed=False,
+                    status="deferred",
+                    error=None,
+                    details={**details, "retry_recommended": True, "reason": "coolify_temporarily_unavailable"},
+                )
+            return ProjectDeployResponse(
+                slug=slug,
+                provider=DeploymentProvider.coolify,
+                deployed=False,
+                status="error",
+                error="coolify_unavailable",
+                details=details,
+            )
+        except Exception as exc:
+            return ProjectDeployResponse(
+                slug=slug,
+                provider=DeploymentProvider.coolify,
+                deployed=False,
+                status="error",
+                error="coolify_deploy_unexpected_error",
+                details={"message": str(exc)},
+            )
+        application_uuid = deployment.details.get("application_uuid") if deployment.details else None
+        if application_uuid:
+            project.coolify_application = application_uuid
+        if deployment.deployed and project.domain and application_uuid:
+            try:
+                route = self.public_route_service.publish_route(
+                    slug=project.slug,
+                    domain=project.domain,
+                    application_uuid=application_uuid,
+                    port=3000 if project.app_type == AppType.nextjs else 80,
+                )
+                deployment.details["public_route"] = route
+            except Exception as exc:
+                deployment.deployed = False
+                deployment.status = "error"
+                deployment.error = f"public_route_sync_failed:{exc}"
+        if deployment.status in {"ready_for_coolify", "deploying", "deployed"}:
             project.status = ProjectStatus.ready_for_deploy if not deployment.deployed else ProjectStatus.deployed
             project.updated_at = datetime.now(timezone.utc)
             self._write_project_metadata(project)
             self.registry_service.write(project)
             self._store_project_summary(project)
+        public_app = self.public_app_service.get_by_slug(project.slug)
+        if public_app:
+            from app.models.schemas import DeploymentStatus, PublicAppDeploymentRequest
+            if deployment.status == "deployed":
+                deployment_status = DeploymentStatus.deployed
+            elif deployment.status == "deploying":
+                deployment_status = DeploymentStatus.deploying
+            elif deployment.status == "ready_for_coolify":
+                deployment_status = DeploymentStatus.ready_for_coolify
+            else:
+                deployment_status = DeploymentStatus.failed
+            self.public_app_service.record_deployment(
+                public_app.app_id,
+                PublicAppDeploymentRequest(
+                    deployment_status=deployment_status,
+                    provider=project.deployment_provider,
+                    public_url=project.domain and f"https://{project.domain}",
+                    domain=project.domain,
+                    details=deployment.details,
+                ),
+            )
         return deployment
 
     def rag_status(self, slug: str) -> RagSyncResponse:

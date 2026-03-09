@@ -15,3 +15,15 @@ allowed_roots:
   - registry
   - rag
   - docs
+min_slug_length: 8
+min_slug_tokens: 2
+disallowed_slug_prefixes:
+  - test
+  - tmp
+  - demo
+  - smoke
+  - probe
+  - repro
+  - hapi-ui
+  - hapi-app
+  - sales-probe
