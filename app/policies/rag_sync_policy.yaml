@@ -15,3 +15,12 @@ conceptual_triggers:
   - usage
   - integration
 tenant_id: ui-projects
+delete_mode_default: soft
+hard_delete_prefixes:
+  - qa-
+  - smoke-
+  - probe-
+  - repro-
+  - tmp-
+  - test-
+hard_delete_for_short_lived: true

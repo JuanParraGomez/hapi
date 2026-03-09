@@ -15,6 +15,8 @@ from app.models.schemas import (
     ReadmeUpdateCheck,
 )
 from app.services.project_policy_service import ProjectPolicyService
+from app.services.public_app_service import PublicAppService
+from app.services.public_route_service import PublicRouteConfig, PublicRouteService
 from app.services.rag_sync_service import RagSyncService
 from app.services.registry_service import RegistryService
 from app.services.template_service import TemplateService
@@ -29,6 +31,8 @@ class FakeRagSyncService:
         self.manifest_dir.mkdir(parents=True, exist_ok=True)
         self._state: dict[str, RagSyncResponse] = {}
         self._manifests: dict[str, RagSyncManifest] = {}
+        self.deleted_documents: list[str] = []
+        self.deletion_notes: list[dict[str, str]] = []
 
     def manifest_path(self, slug: str) -> Path:
         return self.manifest_dir / f"{slug}.yaml"
@@ -43,6 +47,7 @@ class FakeRagSyncService:
         return ReadmeUpdateCheck(slug=slug, needs_refresh=slug not in self._state, reason="test-check", tracked_files=[str(p) for p in source_paths])
 
     def sync(self, slug: str, source_paths: list[Path], metadata: dict[str, str], force: bool = False, note: str | None = None) -> RagSyncResponse:
+        metadata = {"tenant_id": "ui-projects", **metadata}
         response = RagSyncResponse(
             slug=slug,
             synced=True,
@@ -66,6 +71,22 @@ class FakeRagSyncService:
         self.manifest_path(slug).write_text("slug: %s\n" % slug, encoding="utf-8")
         return response
 
+    def delete_document(self, document_id: str, tenant_id: str | None = None) -> dict[str, object]:
+        self.deleted_documents.append(document_id)
+        return {"ok": True, "deleted": True, "document_id": document_id, "tenant_id": tenant_id}
+
+    def write_deletion_note(
+        self,
+        *,
+        slug: str,
+        delete_mode: str,
+        tenant_id: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        doc_id = f"doc-delete-{slug}"
+        self.deletion_notes.append({"slug": slug, "delete_mode": delete_mode, "tenant_id": tenant_id or ""})
+        return {"ok": True, "document_id": doc_id, "tenant_id": tenant_id, "metadata": metadata or {}}
+
 
 class FakeCoolifyService:
     def __init__(self):
@@ -74,14 +95,32 @@ class FakeCoolifyService:
     def list_projects(self):
         return {"projects": [], "count": 0}
 
+    def health(self):
+        return {
+            "enabled": True,
+            "configured": True,
+            "reachable": True,
+            "base_url": "http://coolify.test",
+            "project_count": 1,
+        }
+
+    def resources(self):
+        return {
+            "health": self.health(),
+            "projects": {"projects": [], "count": 0},
+            "default_project_name": "ui-factory-prod",
+            "default_environment_name": "production",
+        }
+
     def deploy_project(self, request: CoolifyApplicationRequest, project_repo_root: Path) -> ProjectDeployResponse:
         self.deploy_calls.append(request)
         return ProjectDeployResponse(
             slug=request.slug,
             provider=DeploymentProvider.coolify,
             deployed=False,
-            status="ready_for_coolify",
+            status="deploying",
             details={
+                "application_uuid": f"coolify-{request.slug}",
                 "project_name": request.project_name,
                 "base_directory": request.base_directory,
                 "repo_root": project_repo_root.name,
@@ -135,6 +174,18 @@ def project_service(tmp_path: Path) -> ProjectService:
     template = TemplateService(repo_root=repo_root, templates_root=policy.project_layout.templates_root)
     rag = FakeRagSyncService(repo_root=repo_root, rag_manifest_root=policy.project_layout.rag_root)
     coolify = FakeCoolifyService()
+    public_route = PublicRouteService(
+        config=PublicRouteConfig(
+            enabled=False,
+            ssh_host="",
+            ssh_user="",
+            ssh_key_path="",
+            remote_traefik_root="",
+            remote_dynamic_dir="",
+            coolify_network="coolify",
+        )
+    )
+    public_apps = PublicAppService(db=db, coolify_service=coolify)
     return ProjectService(
         db=db,
         default_ttl_hours=24,
@@ -144,4 +195,6 @@ def project_service(tmp_path: Path) -> ProjectService:
         template_service=template,
         rag_sync_service=rag,
         coolify_service=coolify,
+        public_route_service=public_route,
+        public_app_service=public_apps,
     )

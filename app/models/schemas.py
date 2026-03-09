@@ -215,6 +215,9 @@ class RagSyncPolicy(BaseModel):
         ]
     )
     tenant_id: str = "ui-projects"
+    delete_mode_default: str = "soft"
+    hard_delete_prefixes: list[str] = Field(default_factory=lambda: ["qa-", "smoke-", "probe-", "repro-", "tmp-", "test-"])
+    hard_delete_for_short_lived: bool = True
 
 
 class CoolifyPolicy(BaseModel):
@@ -293,6 +296,10 @@ class ProjectDeleteResponse(BaseModel):
     removed_paths: list[str] = Field(default_factory=list)
     coolify_deleted: bool = False
     public_registry_deleted: bool = False
+    rag_action: str = "none"
+    rag_deleted: bool = False
+    rag_note_document_id: str | None = None
+    rag_error: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
 
 

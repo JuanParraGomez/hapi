@@ -284,6 +284,11 @@ class ProjectService:
         entry = self.get(slug)
         removed_paths: list[str] = []
         details: dict[str, object] = {}
+        rag_manifest = self.rag_sync_service.current_manifest(entry.slug)
+        rag_action = "none"
+        rag_deleted = False
+        rag_note_document_id: str | None = None
+        rag_error: str | None = None
 
         if purge_coolify and entry.deployment_provider == DeploymentProvider.coolify:
             try:
@@ -311,6 +316,41 @@ class ProjectService:
             shutil.rmtree(project_dir)
             removed_paths.append(str(project_dir.relative_to(self.repo_root)))
 
+        rag_policy = self.policy_service.rag_sync
+        delete_mode = rag_policy.delete_mode_default
+        if rag_policy.hard_delete_for_short_lived and entry.lifetime == ProjectLifetime.short_lived:
+            delete_mode = "hard"
+        if any(entry.slug.startswith(prefix) for prefix in rag_policy.hard_delete_prefixes):
+            delete_mode = "hard"
+
+        if rag_manifest:
+            if delete_mode == "hard" and rag_manifest.document_id:
+                hard_delete = self.rag_sync_service.delete_document(
+                    document_id=rag_manifest.document_id,
+                    tenant_id=rag_policy.tenant_id,
+                )
+                rag_action = "hard_delete"
+                rag_deleted = bool(hard_delete.get("deleted"))
+                if not hard_delete.get("ok"):
+                    rag_error = str(hard_delete.get("error") or "rag_hard_delete_failed")
+                details["rag_hard_delete"] = hard_delete
+
+            deletion_note = self.rag_sync_service.write_deletion_note(
+                slug=entry.slug,
+                delete_mode=delete_mode,
+                tenant_id=rag_policy.tenant_id,
+                metadata={"artifact_type": "ui_project_deletion", "project_type": entry.lifetime.value},
+            )
+            if deletion_note.get("ok"):
+                rag_note_document_id = str(deletion_note.get("document_id") or "") or None
+                if rag_action == "none":
+                    rag_action = "soft_note"
+            else:
+                rag_error = rag_error or str(deletion_note.get("error") or "rag_deletion_note_failed")
+            details["rag_deletion_note"] = deletion_note
+        else:
+            rag_action = "no_manifest"
+
         rag_manifest_path = self.rag_sync_service.manifest_path(entry.slug)
         if rag_manifest_path.exists():
             rag_manifest_path.unlink()
@@ -330,6 +370,10 @@ class ProjectService:
             removed_paths=removed_paths,
             coolify_deleted=coolify_deleted,
             public_registry_deleted=public_registry_deleted,
+            rag_action=rag_action,
+            rag_deleted=rag_deleted,
+            rag_note_document_id=rag_note_document_id,
+            rag_error=rag_error,
             details=details,
         )
 

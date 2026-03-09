@@ -79,15 +79,14 @@ class RagSyncService:
             content_chunks.append(f"# {path.relative_to(self.repo_root)}\n\n{path.read_text(encoding='utf-8')}")
         payload = {
             "text": "\n\n".join(content_chunks),
-            "tenant_id": self.policy.tenant_id,
             "title": f"{slug} project documentation",
-            "metadata": metadata,
+            "metadata": {
+                "tenant_id": self.policy.tenant_id,
+                **metadata,
+            },
         }
         try:
-            with httpx.Client(timeout=30) as client:
-                resp = client.post(f"{self.base_url}/upload-text", json=payload)
-                resp.raise_for_status()
-                result = resp.json()
+            result = self._upload_text(payload)
             manifest = RagSyncManifest(
                 slug=slug,
                 source_paths=tracked,
@@ -125,3 +124,56 @@ class RagSyncService:
                 source_paths=tracked,
                 error=str(exc),
             )
+
+    def delete_document(self, document_id: str, tenant_id: str | None = None) -> dict[str, object]:
+        if not self.enabled:
+            return {"ok": False, "deleted": False, "reason": "rag_sync_disabled"}
+        tenant = tenant_id or self.policy.tenant_id
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.delete(f"{self.base_url}/documents/{document_id}", params={"tenant_id": tenant})
+                resp.raise_for_status()
+                data = resp.json()
+            return {"ok": True, "deleted": True, "document_id": document_id, "tenant_id": tenant, "details": data}
+        except Exception as exc:  # pragma: no cover - network path handled in tests with fakes
+            return {"ok": False, "deleted": False, "document_id": document_id, "tenant_id": tenant, "error": str(exc)}
+
+    def write_deletion_note(
+        self,
+        *,
+        slug: str,
+        delete_mode: str,
+        tenant_id: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        if not self.enabled:
+            return {"ok": False, "reason": "rag_sync_disabled"}
+        tenant = tenant_id or self.policy.tenant_id
+        note_text = (
+            f"Project deletion event\n"
+            f"Slug: {slug}\n"
+            f"DeleteMode: {delete_mode}\n"
+            f"Status: deleted\n"
+        )
+        payload = {
+            "text": note_text,
+            "title": f"{slug} deletion event",
+            "metadata": {
+                "tenant_id": tenant,
+                "artifact_type": "ui_project_deletion",
+                "project_slug": slug,
+                "delete_mode": delete_mode,
+                **(metadata or {}),
+            },
+        }
+        try:
+            result = self._upload_text(payload)
+            return {"ok": True, "tenant_id": tenant, "details": result, "document_id": result.get("document_id")}
+        except Exception as exc:  # pragma: no cover - network path handled in tests with fakes
+            return {"ok": False, "tenant_id": tenant, "error": str(exc)}
+
+    def _upload_text(self, payload: dict[str, object]) -> dict[str, object]:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(f"{self.base_url}/upload-text", json=payload)
+            resp.raise_for_status()
+            return resp.json()
