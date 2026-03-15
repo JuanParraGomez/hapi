@@ -52,6 +52,7 @@ class AppType(str, Enum):
     react = "react"
     nextjs = "nextjs"
     static_html = "static_html"
+    dockerfile = "dockerfile"
     generic = "generic"
 
 

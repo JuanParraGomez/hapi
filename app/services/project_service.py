@@ -652,9 +652,8 @@ class ProjectService:
         return self.rag_sync_service.check_refresh_needed(project.slug, self._rag_source_paths(project))
 
     def _default_domain(self, slug: str, lifetime: ProjectLifetime) -> str | None:
-        if lifetime == ProjectLifetime.long_lived:
-            return f"{slug}.apps.uniflexa.cloud"
-        return f"{slug}.sandbox.uniflexa.cloud"
+        # Both short_lived and long_lived use *.apps.uniflexa.cloud (wildcard DNS configured)
+        return f"{slug}.apps.uniflexa.cloud"
 
     def _build_readme(
         self,

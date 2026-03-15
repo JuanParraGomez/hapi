@@ -51,8 +51,8 @@ class Settings(BaseSettings):
     public_proxy_ssh_host: str = "72.61.2.9"
     public_proxy_ssh_user: str = "root"
     public_proxy_ssh_key_path: str = "/opt/ssh-keys/id_ed25519_openclaw"
-    public_proxy_remote_traefik_root: str = "/root/traefik"
-    public_proxy_remote_dynamic_dir: str = "/root/traefik/dynamic"
+    public_proxy_remote_traefik_root: str = "/data/coolify/proxy"
+    public_proxy_remote_dynamic_dir: str = "/data/coolify/proxy/dynamic"
     public_proxy_coolify_network: str = "coolify"
 
     @property
