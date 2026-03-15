@@ -38,9 +38,22 @@ class Settings(BaseSettings):
     coolify_enabled: bool = False
     coolify_base_url: str = "http://127.0.0.1:18000"
     coolify_api_token: str | None = None
+    coolify_verify_ssl: bool = True
+    coolify_server_uuid: str | None = None
+    coolify_destination_uuid: str | None = None
+    coolify_git_branch: str = "main"
+    coolify_git_private_key_uuid: str | None = None
 
     rag_sync_enabled: bool = True
     rag_api_base_url: str = "http://127.0.0.1:8000"
+
+    public_proxy_enabled: bool = True
+    public_proxy_ssh_host: str = "72.61.2.9"
+    public_proxy_ssh_user: str = "root"
+    public_proxy_ssh_key_path: str = "/opt/ssh-keys/id_ed25519_openclaw"
+    public_proxy_remote_traefik_root: str = "/root/traefik"
+    public_proxy_remote_dynamic_dir: str = "/root/traefik/dynamic"
+    public_proxy_coolify_network: str = "coolify"
 
     @property
     def inventory_path(self) -> Path:
@@ -53,5 +66,4 @@ def get_settings() -> Settings:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.inventory_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.coolify_server_repo_root.mkdir(parents=True, exist_ok=True)
     return settings

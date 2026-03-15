@@ -123,8 +123,9 @@ Returned context includes:
 Current integration covers:
 - listing projects
 - ensuring a Coolify project exists
-- preparing deployment metadata for monorepo subdirectories
-- deployment handoff using `base_directory=/apps/<slug>` or `/sandboxes/<slug>`
+- resolving server/destination metadata
+- creating or reusing a Coolify application for a monorepo subdirectory
+- triggering deployment using `base_directory=/apps/<slug>` or `/sandboxes/<slug>`
 
 If `Coolify` is not configured:
 - `hapi` degrades with explicit errors
@@ -165,6 +166,19 @@ Phase 2 endpoints:
 - `POST /registry/refresh`
 - `GET /coolify/projects`
 
+Public-plane endpoints for `langgraph-agent-server`:
+- `GET /public/apps`
+- `GET /public/apps/{app_id}`
+- `GET /public/apps/by-slug/{slug}`
+- `GET /public/apps/by-domain/{domain}`
+- `POST /public/apps/register`
+- `POST /public/apps/{app_id}/deployment`
+- `POST /public/apps/{app_id}/sync`
+- `GET /public/deployments/{app_id}/status`
+- `GET /infra/coolify/health`
+- `GET /infra/coolify/resources`
+- `GET /infra/public-summary`
+
 ## MCP tools
 - `hapi_health`
 - `hapi_run_discovery`
@@ -183,13 +197,39 @@ Phase 2 endpoints:
 - `hapi_list_registry`
 - `hapi_refresh_registry`
 - `hapi_update_project`
+- `hapi_list_public_apps`
+- `hapi_get_public_app`
+- `hapi_get_public_app_by_slug`
+- `hapi_register_public_app`
+- `hapi_record_public_deployment`
+- `hapi_public_summary`
+- `hapi_coolify_health`
+
+## LangGraph integration
+`langgraph-agent-server` is the only workflow brain. `hapi` is the auxiliary public-plane service it calls for:
+- project bootstrap in `coolify-server`
+- project context rendering
+- public app lookup/registration
+- deployment visibility
+- Coolify health/resources
+
+Reference docs:
+- `docs/UI_FACTORY_ARCHITECTURE.md`
+- `docs/LANGGRAPH_HAPI_CONTRACT.md`
+- `docs/PUBLIC_APP_REGISTRY.md`
+- `docs/FAILURE_AND_RETRY_MODEL.md`
 
 ## Environment
 Important variables:
 - `COOLIFY_SERVER_REPO_ROOT`
 - `COOLIFY_ENABLED`
 - `COOLIFY_BASE_URL`
+- `COOLIFY_VERIFY_SSL`
 - `COOLIFY_API_TOKEN`
+- `COOLIFY_SERVER_UUID`
+- `COOLIFY_DESTINATION_UUID`
+- `COOLIFY_GIT_BRANCH`
+- `COOLIFY_GIT_PRIVATE_KEY_UUID`
 - `DEFAULT_LONG_LIVED_ROOT`
 - `DEFAULT_SHORT_LIVED_ROOT`
 - `RAG_SYNC_ENABLED`

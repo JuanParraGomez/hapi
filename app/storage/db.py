@@ -12,9 +12,12 @@ class Database:
 
     @contextmanager
     def connect(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout = 10000")
+            conn.execute("PRAGMA synchronous = NORMAL")
             yield conn
             conn.commit()
         finally:
@@ -64,6 +67,57 @@ class Database:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public_apps (
+                    app_id TEXT PRIMARY KEY,
+                    slug TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    app_type TEXT NOT NULL,
+                    framework TEXT,
+                    repo_url TEXT,
+                    branch TEXT,
+                    commit_sha TEXT,
+                    public_url TEXT,
+                    domain TEXT,
+                    deployment_provider TEXT NOT NULL,
+                    data_strategy_json TEXT NOT NULL,
+                    project_slug TEXT,
+                    status TEXT NOT NULL,
+                    tags_json TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public_deployments (
+                    app_id TEXT PRIMARY KEY,
+                    deployment_status TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    public_url TEXT,
+                    domain TEXT,
+                    commit_sha TEXT,
+                    details_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_events (
+                    event_id TEXT PRIMARY KEY,
+                    app_id TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    correlation_id TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             self._ensure_column(conn, "projects", "slug", "TEXT")
             self._ensure_column(conn, "projects", "updated_at", "TEXT")
             self._ensure_column(conn, "projects", "status", "TEXT")
@@ -74,6 +128,9 @@ class Database:
             self._ensure_column(conn, "projects", "rag_sync_enabled", "INTEGER")
             self._ensure_column(conn, "projects", "promoted_from", "TEXT")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_public_apps_slug ON public_apps(slug)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_public_apps_domain ON public_apps(domain)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_events_app_id ON sync_events(app_id)")
 
     @staticmethod
     def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

@@ -10,8 +10,13 @@ services:
       - ./data:/app/data
       - ./app/policies:/app/app/policies:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      - /home/juan/Documents/coolify-server:/home/juan/Documents/coolify-server
+      - /home/juan/Documents/ssh:/opt/ssh-keys:ro
+      - /home/juan/.ssh:/opt/home-ssh:ro
     ports:
       - "8095:8095"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health')"]
@@ -36,4 +41,6 @@ services:
         condition: service_healthy
     ports:
       - "8096:8096"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

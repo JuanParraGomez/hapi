@@ -147,6 +147,84 @@ async def hapi_update_project(slug: str, description: str | None = None, notes: 
     return await _patch(f"/projects/{slug}", payload)
 
 
+@mcp.tool
+async def hapi_list_public_apps() -> dict:
+    return await _get("/public/apps")
+
+
+@mcp.tool
+async def hapi_get_public_app(app_id: str) -> dict:
+    return await _get(f"/public/apps/{app_id}")
+
+
+@mcp.tool
+async def hapi_get_public_app_by_slug(slug: str) -> dict:
+    return await _get(f"/public/apps/by-slug/{slug}")
+
+
+@mcp.tool
+async def hapi_register_public_app(
+    slug: str,
+    name: str,
+    app_type: str = "generic",
+    framework: str | None = None,
+    repo_url: str | None = None,
+    branch: str | None = None,
+    commit_sha: str | None = None,
+    public_url: str | None = None,
+    domain: str | None = None,
+    project_slug: str | None = None,
+    status: str = "draft",
+) -> dict:
+    return await _post(
+        "/public/apps/register",
+        {
+            "slug": slug,
+            "name": name,
+            "app_type": app_type,
+            "framework": framework,
+            "repo_url": repo_url,
+            "branch": branch,
+            "commit_sha": commit_sha,
+            "public_url": public_url,
+            "domain": domain,
+            "project_slug": project_slug,
+            "status": status,
+        },
+    )
+
+
+@mcp.tool
+async def hapi_record_public_deployment(
+    app_id: str,
+    deployment_status: str,
+    provider: str = "coolify",
+    public_url: str | None = None,
+    domain: str | None = None,
+    commit_sha: str | None = None,
+) -> dict:
+    return await _post(
+        f"/public/apps/{app_id}/deployment",
+        {
+            "deployment_status": deployment_status,
+            "provider": provider,
+            "public_url": public_url,
+            "domain": domain,
+            "commit_sha": commit_sha,
+        },
+    )
+
+
+@mcp.tool
+async def hapi_public_summary() -> dict:
+    return await _get("/infra/public-summary")
+
+
+@mcp.tool
+async def hapi_coolify_health() -> dict:
+    return await _get("/infra/coolify/health")
+
+
 def main() -> None:
     mcp.run(transport=TRANSPORT, host=MCP_HOST, port=MCP_PORT)
 
